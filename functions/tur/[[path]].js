@@ -9,7 +9,7 @@ export async function onRequest(context) {
 
   // 处理 /tur/ 主页
   if (path === PREFIX + "/") {
-    // 映射到 tur-mirror.pages.dev 根目录
+    // 直接映射到 tur-mirror.pages.dev 根目录
     return fetch("https://tur-mirror.pages.dev/");
   }
 
@@ -23,13 +23,20 @@ export async function onRequest(context) {
       const githubUrl = `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`;
 
       let response = await fetch(githubUrl);
-      response = new Response(response.body, response);
-      response.headers.set("Cache-Control", "public, max-age=900"); // 15分钟缓存
-      return response;
+
+      // 克隆 headers 并加上缓存控制
+      let newHeaders = new Headers(response.headers);
+      newHeaders.set("Cache-Control", "public, max-age=900");
+
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders,
+      });
     }
   }
 
-  // 处理 pool 下游文件
+  // 处理 pool 下游文件 (.deb 包等)
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
     const fileName = path.split('/').pop();
     const upstream =
@@ -37,12 +44,19 @@ export async function onRequest(context) {
       encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
 
     let response = await fetch(upstream);
-    response = new Response(response.body, response);
-    response.headers.set("Cache-Control", "public, max-age=86400"); // 1天缓存
-    return response;
+
+    // 克隆 headers 并加上缓存控制
+    let newHeaders = new Headers(response.headers);
+    newHeaders.set("Cache-Control", "public, max-age=86400");
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders,
+    });
   }
 
-  // 默认回源到 pages
+  // 默认回源到 tur-mirror.pages.dev
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
   return fetch(pagesUrl);
