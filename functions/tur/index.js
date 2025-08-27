@@ -1,0 +1,1 @@
+export default async () => Response.redirect('/tur/', 301);

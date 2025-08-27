@@ -1,0 +1,6 @@
+{
+  "routes": [
+    { "src": "/tur", "dest": "/tur" },
+    { "src": "/tur/*", "dest": "/tur/*" }
+  ]
+}
