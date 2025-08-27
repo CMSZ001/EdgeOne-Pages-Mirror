@@ -1,17 +1,13 @@
-// functions/tur.js
+// functions/tur/[...path].js
 
-export async function handleTur(context, path) {
+export async function onRequest(context) {
   const { request, waitUntil } = context;
   const url = new URL(request.url);
+  const path = url.pathname;
   const PREFIX = "/tur";
   const cache = caches.default;
 
-  // /tur → 301 跳转
-  if (path === PREFIX) {
-    return Response.redirect(url.origin + PREFIX + "/", 301);
-  }
-
-  // /tur/dists/* → 不缓存，直接回源
+  // /tur/dists/* → 不缓存，直连
   if (path.startsWith(PREFIX + "/dists/") && !path.endsWith("/")) {
     const upstreamPath = path.slice(PREFIX.length);
     const githubUrl = `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`;
@@ -30,7 +26,7 @@ export async function handleTur(context, path) {
     if (!resp) {
       resp = await fetch(req);
       resp = new Response(resp.body, resp);
-      resp.headers.set("Cache-Control", "s-maxage=86400"); // 1 天
+      resp.headers.set("Cache-Control", "s-maxage=86400");
       waitUntil(cache.put(req, resp.clone()));
       resp.headers.set("x-edge-cache", "miss");
     } else {
@@ -40,7 +36,7 @@ export async function handleTur(context, path) {
     return resp;
   }
 
-  // 其他 /tur/* → 转发 tur-mirror.pages.dev
+  // 其他 tur/* → 转发到 tur-mirror.pages.dev
   const upstreamPath = path.slice(PREFIX.length);
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
   return fetch(new Request(pagesUrl, request));
