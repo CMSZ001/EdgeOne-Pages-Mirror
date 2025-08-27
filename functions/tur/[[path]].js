@@ -7,6 +7,12 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const path = url.pathname;
 
+  // 处理 /tur/ 主页
+  if (path === PREFIX + "/") {
+    // 映射到 tur-mirror.pages.dev 根目录
+    return fetch("https://tur-mirror.pages.dev/");
+  }
+
   // 处理 dists 下游文件
   if (path.startsWith(PREFIX + '/dists/')) {
     if (!path.endsWith('/')) {
