@@ -7,7 +7,13 @@ export async function onRequest(context) {
   const PREFIX = "/tur";
   const cache = caches.default;
 
-  // /tur/dists/* → 不缓存，直连
+  // ✅ 如果正好是 "/tur/"，不要重定向，直接转发到 pages
+  if (path === PREFIX + "/") {
+    const pagesUrl = `https://tur-mirror.pages.dev/`;
+    return fetch(new Request(pagesUrl, request));
+  }
+
+  // /tur/dists/* → 不缓存
   if (path.startsWith(PREFIX + "/dists/") && !path.endsWith("/")) {
     const upstreamPath = path.slice(PREFIX.length);
     const githubUrl = `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`;
