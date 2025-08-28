@@ -30,8 +30,8 @@ export async function onRequest(context) {
       const upstreamUrls = inChina
         ? [
             `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`,
+            `https://cdn.jsdmirror.cn/gh/termux-user-repository/dists@master/${upstreamPath}`,
             `https://fastly.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
-            `https://cdn.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
           ]
         : [
             `https://cdn.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
