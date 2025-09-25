@@ -1,7 +1,6 @@
 const PREFIX = '/tur';
 
 async function fetchWithKeepAlive(url) {
-  // 使用 keepalive 预热连接并发送请求
   return fetch(url, {
     redirect: 'follow',
     keepalive: true,
@@ -10,6 +9,13 @@ async function fetchWithKeepAlive(url) {
 
 export async function onRequest(context) {
   const request = context.request;
+  const method = request.method.toUpperCase();
+
+  // 请求验证：只允许 GET 和 HEAD
+  if (!['GET', 'HEAD'].includes(method)) {
+    return new Response('Method Not Allowed', { status: 405 });
+  }
+
   const url = new URL(request.url);
   const path = url.pathname;
 
@@ -17,12 +23,10 @@ export async function onRequest(context) {
   const country = geo?.countryName?.toLowerCase() ?? "unknown";
   const inChina = country === "cn";
 
-  // ------------------ 根路径 ------------------
   if (path === PREFIX + "/") {
     return fetchWithKeepAlive("https://tur-mirror.pages.dev/");
   }
 
-  // ------------------ dists ------------------
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
     let upstreamPath = path.slice(PREFIX.length);
     if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
@@ -55,7 +59,6 @@ export async function onRequest(context) {
     }
   }
 
-  // ------------------ pool 文件 ------------------
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
     const fileName = path.split('/').pop();
     const safeName = encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
@@ -104,7 +107,6 @@ export async function onRequest(context) {
     return new Response(`All pool upstreams failed: ${lastError}`, { status: 502 });
   }
 
-  // ------------------ fallback ------------------
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
   return fetchWithKeepAlive(pagesUrl);
