@@ -73,6 +73,12 @@ export async function onRequest(context) {
       try {
         const response = await fetch(urlTry);
         if (response.ok) {
+          const bodyStream = response.body;
+          if (!bodyStream) {
+            lastError = new Error(`Upstream ${urlTry} returned empty body`);
+            continue; // 跳过空 body
+          }
+
           let newHeaders = new Headers(response.headers);
           if (response.headers.get("accept-ranges")) {
             newHeaders.set("accept-ranges", response.headers.get("accept-ranges"));
@@ -85,20 +91,20 @@ export async function onRequest(context) {
             encoding = "deflate";
           }
 
-          let bodyStream = response.body;
+          let finalBody = bodyStream;
           if (encoding && typeof CompressionStream !== "undefined") {
-            bodyStream = bodyStream.pipeThrough(new CompressionStream(encoding));
+            finalBody = bodyStream.pipeThrough(new CompressionStream(encoding));
             newHeaders.set("Content-Encoding", encoding);
           }
 
-          return new Response(bodyStream, {
+          return new Response(finalBody, {
             status: response.status,
             statusText: response.statusText,
             headers: newHeaders,
           });
         } else if (response.status === 429) {
           lastError = new Error(`Upstream ${urlTry} returned 429, trying next`);
-          continue;
+          continue; // 遇到 429 尝试下一个
         } else {
           lastError = new Error(`Upstream ${urlTry} failed with status ${response.status}`);
         }
