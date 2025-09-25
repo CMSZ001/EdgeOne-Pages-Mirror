@@ -11,12 +11,16 @@ export async function onRequest(context) {
   const request = context.request;
   const method = request.method.toUpperCase();
 
-  // 请求验证：只允许 GET 和 HEAD
   if (!['GET', 'HEAD'].includes(method)) {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
   const url = new URL(request.url);
+
+  if (url.href.length > 2048) {
+    return new Response('Request URI Too Long', { status: 414 });
+  }
+
   const path = url.pathname;
 
   const geo = request.eo?.geo;
