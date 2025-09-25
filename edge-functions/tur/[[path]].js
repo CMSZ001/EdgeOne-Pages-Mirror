@@ -9,13 +9,14 @@ export async function onRequest(context) {
   const country = geo?.countryName?.toLowerCase() ?? "unknown";
   const inChina = country === "cn";
 
+  // ------------------ 根路径 ------------------
   if (path === PREFIX + "/") {
     return fetch("https://tur-mirror.pages.dev/", {
       headers: { "Cache-Control": "no-store" }
     });
   }
 
-  // dists 文件，不压缩
+  // ------------------ dists ------------------
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
     let upstreamPath = path.slice(PREFIX.length);
     if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
@@ -48,7 +49,7 @@ export async function onRequest(context) {
     }
   }
 
-  // pool 文件，默认 gzip 压缩
+  // ------------------ pool 文件 ------------------
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
     const fileName = path.split('/').pop();
     const safeName = encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
@@ -63,6 +64,7 @@ export async function onRequest(context) {
           `https://ghfast.top/https://github.com/termux-user-repository/dists/releases/download/0.1/${safeName}`,
         ]
       : [
+          `https://xget.xi-xu.me/gh/termux-user-repository/dists/releases/download/0.1/${safeName}`,
           `https://github.com/termux-user-repository/dists/releases/download/0.1/${safeName}`
         ];
 
@@ -94,6 +96,9 @@ export async function onRequest(context) {
             statusText: response.statusText,
             headers: newHeaders,
           });
+        } else if (response.status === 429) {
+          lastError = new Error(`Upstream ${urlTry} returned 429, trying next`);
+          continue;
         } else {
           lastError = new Error(`Upstream ${urlTry} failed with status ${response.status}`);
         }
@@ -105,7 +110,7 @@ export async function onRequest(context) {
     return new Response(`All pool upstreams failed: ${lastError}`, { status: 502 });
   }
 
-  // fallback，不压缩
+  // ------------------ fallback ------------------
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
   return fetch(pagesUrl, { headers: { "Cache-Control": "no-store" } });
