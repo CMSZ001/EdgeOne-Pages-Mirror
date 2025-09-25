@@ -1,10 +1,23 @@
 const PREFIX = '/tur';
+const REQUEST_TIMEOUT = 30000; // 30秒，可根据需要修改
 
 async function fetchWithKeepAlive(url) {
-  return fetch(url, {
-    redirect: 'follow',
-    keepalive: true,
-  });
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+  try {
+    return await fetch(url, {
+      redirect: 'follow',
+      keepalive: true,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Request Timeout');
+    }
+    throw err;
+  } finally {
+    clearTimeout(id);
+  }
 }
 
 export async function onRequest(context) {
@@ -23,7 +36,6 @@ export async function onRequest(context) {
 
   let path = url.pathname;
 
-  // 输入清理：防止路径遍历和注入
   if (path.includes('..') || /[^a-zA-Z0-9._/-]/.test(path)) {
     return new Response('Bad Request', { status: 400 });
   }
@@ -33,7 +45,14 @@ export async function onRequest(context) {
   const inChina = country === "cn";
 
   if (path === PREFIX + "/") {
-    return fetchWithKeepAlive("https://tur-mirror.pages.dev/");
+    try {
+      return await fetchWithKeepAlive("https://tur-mirror.pages.dev/");
+    } catch (err) {
+      if (err.message === 'Request Timeout') {
+        return new Response('Request Timeout', { status: 504 });
+      }
+      throw err;
+    }
   }
 
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
@@ -64,6 +83,9 @@ export async function onRequest(context) {
         });
       }
     } catch (err) {
+      if (err.message === 'Request Timeout') {
+        return new Response('Request Timeout', { status: 504 });
+      }
       return new Response("All dists upstreams failed: " + err, { status: 502 });
     }
   }
@@ -118,5 +140,12 @@ export async function onRequest(context) {
 
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
-  return fetchWithKeepAlive(pagesUrl);
+  try {
+    return await fetchWithKeepAlive(pagesUrl);
+  } catch (err) {
+    if (err.message === 'Request Timeout') {
+      return new Response('Request Timeout', { status: 504 });
+    }
+    throw err;
+  }
 }

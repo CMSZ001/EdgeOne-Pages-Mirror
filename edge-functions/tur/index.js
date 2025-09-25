@@ -1,3 +1,5 @@
+const REQUEST_TIMEOUT = 30000; // 30秒，可根据需要修改
+
 export async function onRequest(context) {
   const request = context.request;
   const method = request.method.toUpperCase();
@@ -14,7 +16,7 @@ export async function onRequest(context) {
 
   const path = url.pathname;
 
-  // 输入清理：防止路径遍历和注入
+  // 输入清理
   if (path.includes('..') || /[^a-zA-Z0-9._/-]/.test(path)) {
     return new Response('Bad Request', { status: 400 });
   }
@@ -24,6 +26,17 @@ export async function onRequest(context) {
   }
 
   if (path === "/tur/") {
-    return fetch("https://tur-mirror.pages.dev/");
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+    try {
+      return await fetch("https://tur-mirror.pages.dev/", { signal: controller.signal });
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return new Response('Request Timeout', { status: 504 });
+      }
+      throw err;
+    } finally {
+      clearTimeout(id);
+    }
   }
 }
