@@ -1,12 +1,11 @@
 const PREFIX = '/tur';
-const REQUEST_TIMEOUT = 30000; // 30秒，可根据需要修改
-const MAX_RETRIES = 3;         // 最大重试次数
-const RETRY_DELAY_BASE = 1000; // 重试延迟基数(ms)，实际延迟 = RETRY_DELAY_BASE * attempt
+const REQUEST_TIMEOUT = 30000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_BASE = 1000;
 
 async function fetchWithRetry(url, options = {}, attempt = 1) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
     if (!response.ok && attempt < MAX_RETRIES) {
@@ -31,23 +30,17 @@ async function fetchWithRetry(url, options = {}, attempt = 1) {
 export async function onRequest(context) {
   const request = context.request;
   const method = request.method.toUpperCase();
-
   if (!['GET', 'HEAD'].includes(method)) {
     return new Response('Method Not Allowed', { status: 405 });
   }
-
   const url = new URL(request.url);
-
   if (url.href.length > 2048) {
     return new Response('Request URI Too Long', { status: 414 });
   }
-
   let path = url.pathname;
-
   if (path.includes('..') || /[^a-zA-Z0-9._/-]/.test(path)) {
     return new Response('Bad Request', { status: 400 });
   }
-
   const geo = request.eo?.geo;
   const country = geo?.countryName?.toLowerCase() ?? "unknown";
   const inChina = country === "cn";
@@ -66,7 +59,6 @@ export async function onRequest(context) {
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
     let upstreamPath = path.slice(PREFIX.length);
     if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
-
     const upstreamUrls = inChina
       ? [
           `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`,
@@ -78,7 +70,6 @@ export async function onRequest(context) {
           `https://fastly.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
           `https://testingcf.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
         ];
-
     let lastError;
     for (const urlTry of upstreamUrls) {
       try {
@@ -104,7 +95,6 @@ export async function onRequest(context) {
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
     const fileName = path.split('/').pop();
     const safeName = encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
-
     const upstreamUrls = inChina
       ? [
           `https://xget.xi-xu.me/gh/termux-user-repository/dists/releases/download/0.1/${safeName}`,
@@ -118,7 +108,6 @@ export async function onRequest(context) {
           `https://xget.xi-xu.me/gh/termux-user-repository/dists/releases/download/0.1/${safeName}`,
           `https://github.com/termux-user-repository/dists/releases/download/0.1/${safeName}`
         ];
-
     let lastError;
     for (const urlTry of upstreamUrls) {
       try {
