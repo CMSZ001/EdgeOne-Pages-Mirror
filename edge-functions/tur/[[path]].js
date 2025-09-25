@@ -21,7 +21,12 @@ export async function onRequest(context) {
     return new Response('Request URI Too Long', { status: 414 });
   }
 
-  const path = url.pathname;
+  let path = url.pathname;
+
+  // 输入清理：防止路径遍历和注入
+  if (path.includes('..') || /[^a-zA-Z0-9._/-]/.test(path)) {
+    return new Response('Bad Request', { status: 400 });
+  }
 
   const geo = request.eo?.geo;
   const country = geo?.countryName?.toLowerCase() ?? "unknown";
