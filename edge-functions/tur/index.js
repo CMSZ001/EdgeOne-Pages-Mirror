@@ -1,6 +1,3 @@
-// EdgeOne Pages Functions – mirror.acmsz.top
-// 专门处理 /tur 和 /tur/
-
 export async function onRequest(context) {
   const request = context.request;
   const url = new URL(request.url);

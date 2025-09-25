@@ -1,6 +1,3 @@
-// EdgeOne Pages Functions – mirror.acmsz.top
-// APT 极致优化版: dists 短缓存 + ETag + race, pool 流式大文件 + 长缓存
-
 const PREFIX = '/tur';
 
 export async function onRequest(context) {
@@ -8,9 +5,10 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  const geo = context.geo || {};
-  const country = (geo.country || "unknown").toLowerCase();
-  const inChina = (country === "cn");
+  // 最新官方 geo 获取方式
+  const geo = request.eo?.geo;
+  const country = geo?.countryName?.toLowerCase() ?? "unknown";
+  const inChina = country === "cn";
 
   // ------------------ /tur/ 根路径 ------------------
   if (path === PREFIX + "/") {
