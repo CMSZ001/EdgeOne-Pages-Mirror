@@ -1,5 +1,13 @@
 const PREFIX = '/tur';
 
+async function fetchWithKeepAlive(url) {
+  // 使用 keepalive 预热连接并发送请求
+  return fetch(url, {
+    redirect: 'follow',
+    keepalive: true,
+  });
+}
+
 export async function onRequest(context) {
   const request = context.request;
   const url = new URL(request.url);
@@ -11,9 +19,7 @@ export async function onRequest(context) {
 
   // ------------------ 根路径 ------------------
   if (path === PREFIX + "/") {
-    return fetch("https://tur-mirror.pages.dev/", {
-      headers: { "Cache-Control": "no-store" }
-    });
+    return fetchWithKeepAlive("https://tur-mirror.pages.dev/");
   }
 
   // ------------------ dists ------------------
@@ -34,7 +40,7 @@ export async function onRequest(context) {
         ];
 
     try {
-      const response = await Promise.any(upstreamUrls.map(u => fetch(u)));
+      const response = await Promise.any(upstreamUrls.map(u => fetchWithKeepAlive(u)));
       if (response.ok) {
         let newHeaders = new Headers(response.headers);
         newHeaders.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
@@ -71,40 +77,22 @@ export async function onRequest(context) {
     let lastError;
     for (const urlTry of upstreamUrls) {
       try {
-        const response = await fetch(urlTry);
-        if (response.ok) {
-          const bodyStream = response.body;
-          if (!bodyStream) {
-            lastError = new Error(`Upstream ${urlTry} returned empty body`);
-            continue; // 跳过空 body
-          }
-
+        const response = await fetchWithKeepAlive(urlTry);
+        if (response.ok && response.body) {
           let newHeaders = new Headers(response.headers);
           if (response.headers.get("accept-ranges")) {
             newHeaders.set("accept-ranges", response.headers.get("accept-ranges"));
           }
           newHeaders.set("Cache-Control", "public, max-age=604800");
 
-          const acceptEncoding = request.headers.get("accept-encoding") || "";
-          let encoding = "gzip";
-          if (acceptEncoding.includes("deflate") && !acceptEncoding.includes("gzip")) {
-            encoding = "deflate";
-          }
-
-          let finalBody = bodyStream;
-          if (encoding && typeof CompressionStream !== "undefined") {
-            finalBody = bodyStream.pipeThrough(new CompressionStream(encoding));
-            newHeaders.set("Content-Encoding", encoding);
-          }
-
-          return new Response(finalBody, {
+          return new Response(response.body, {
             status: response.status,
             statusText: response.statusText,
             headers: newHeaders,
           });
         } else if (response.status === 429) {
           lastError = new Error(`Upstream ${urlTry} returned 429, trying next`);
-          continue; // 遇到 429 尝试下一个
+          continue;
         } else {
           lastError = new Error(`Upstream ${urlTry} failed with status ${response.status}`);
         }
@@ -119,5 +107,5 @@ export async function onRequest(context) {
   // ------------------ fallback ------------------
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
-  return fetch(pagesUrl, { headers: { "Cache-Control": "no-store" } });
+  return fetchWithKeepAlive(pagesUrl);
 }
