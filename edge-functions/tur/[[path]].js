@@ -1,16 +1,24 @@
 const PREFIX = '/tur';
 const REQUEST_TIMEOUT = 30000; // 30秒，可根据需要修改
+const MAX_RETRIES = 3;         // 最大重试次数
+const RETRY_DELAY_BASE = 1000; // 重试延迟基数(ms)，实际延迟 = RETRY_DELAY_BASE * attempt
 
-async function fetchWithKeepAlive(url) {
+async function fetchWithRetry(url, options = {}, attempt = 1) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
   try {
-    return await fetch(url, {
-      redirect: 'follow',
-      keepalive: true,
-      signal: controller.signal,
-    });
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok && attempt < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, RETRY_DELAY_BASE * attempt));
+      return fetchWithRetry(url, options, attempt + 1);
+    }
+    return response;
   } catch (err) {
+    if (attempt < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, RETRY_DELAY_BASE * attempt));
+      return fetchWithRetry(url, options, attempt + 1);
+    }
     if (err.name === 'AbortError') {
       throw new Error('Request Timeout');
     }
@@ -46,7 +54,7 @@ export async function onRequest(context) {
 
   if (path === PREFIX + "/") {
     try {
-      return await fetchWithKeepAlive("https://tur-mirror.pages.dev/");
+      return await fetchWithRetry("https://tur-mirror.pages.dev/", { redirect: 'follow', keepalive: true });
     } catch (err) {
       if (err.message === 'Request Timeout') {
         return new Response('Request Timeout', { status: 504 });
@@ -71,23 +79,26 @@ export async function onRequest(context) {
           `https://testingcf.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
         ];
 
-    try {
-      const response = await Promise.any(upstreamUrls.map(u => fetchWithKeepAlive(u)));
-      if (response.ok) {
-        let newHeaders = new Headers(response.headers);
-        newHeaders.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: newHeaders,
-        });
+    let lastError;
+    for (const urlTry of upstreamUrls) {
+      try {
+        const response = await fetchWithRetry(urlTry, { redirect: 'follow', keepalive: true });
+        if (response.ok) {
+          const newHeaders = new Headers(response.headers);
+          newHeaders.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+          return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: newHeaders,
+          });
+        } else {
+          lastError = new Error(`Upstream ${urlTry} failed with status ${response.status}`);
+        }
+      } catch (err) {
+        lastError = err;
       }
-    } catch (err) {
-      if (err.message === 'Request Timeout') {
-        return new Response('Request Timeout', { status: 504 });
-      }
-      return new Response("All dists upstreams failed: " + err, { status: 502 });
     }
+    return new Response("All dists upstreams failed: " + lastError, { status: 502 });
   }
 
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
@@ -111,14 +122,13 @@ export async function onRequest(context) {
     let lastError;
     for (const urlTry of upstreamUrls) {
       try {
-        const response = await fetchWithKeepAlive(urlTry);
+        const response = await fetchWithRetry(urlTry, { redirect: 'follow', keepalive: true });
         if (response.ok && response.body) {
-          let newHeaders = new Headers(response.headers);
+          const newHeaders = new Headers(response.headers);
           if (response.headers.get("accept-ranges")) {
             newHeaders.set("accept-ranges", response.headers.get("accept-ranges"));
           }
           newHeaders.set("Cache-Control", "public, max-age=604800");
-
           return new Response(response.body, {
             status: response.status,
             statusText: response.statusText,
@@ -134,14 +144,13 @@ export async function onRequest(context) {
         lastError = err;
       }
     }
-
     return new Response(`All pool upstreams failed: ${lastError}`, { status: 502 });
   }
 
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
   try {
-    return await fetchWithKeepAlive(pagesUrl);
+    return await fetchWithRetry(pagesUrl, { redirect: 'follow', keepalive: true });
   } catch (err) {
     if (err.message === 'Request Timeout') {
       return new Response('Request Timeout', { status: 504 });
