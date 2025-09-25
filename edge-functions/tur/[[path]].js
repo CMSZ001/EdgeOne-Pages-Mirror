@@ -9,18 +9,13 @@ export async function onRequest(context) {
   const country = geo?.countryName?.toLowerCase() ?? "unknown";
   const inChina = country === "cn";
 
-  const acceptEncoding = request.headers.get("accept-encoding") || "";
-  let encoding = "gzip";
-  if (acceptEncoding.includes("deflate") && !acceptEncoding.includes("gzip")) {
-    encoding = "deflate";
-  }
-
   if (path === PREFIX + "/") {
     return fetch("https://tur-mirror.pages.dev/", {
       headers: { "Cache-Control": "no-store" }
     });
   }
 
+  // dists 文件，不压缩
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
     let upstreamPath = path.slice(PREFIX.length);
     if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
@@ -53,6 +48,7 @@ export async function onRequest(context) {
     }
   }
 
+  // pool 文件，默认 gzip 压缩
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
     const fileName = path.split('/').pop();
     const safeName = encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
@@ -81,6 +77,12 @@ export async function onRequest(context) {
           }
           newHeaders.set("Cache-Control", "public, max-age=604800");
 
+          const acceptEncoding = request.headers.get("accept-encoding") || "";
+          let encoding = "gzip";
+          if (acceptEncoding.includes("deflate") && !acceptEncoding.includes("gzip")) {
+            encoding = "deflate";
+          }
+
           let bodyStream = response.body;
           if (encoding && typeof CompressionStream !== "undefined") {
             bodyStream = bodyStream.pipeThrough(new CompressionStream(encoding));
@@ -103,22 +105,8 @@ export async function onRequest(context) {
     return new Response(`All pool upstreams failed: ${lastError}`, { status: 502 });
   }
 
+  // fallback，不压缩
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
-  const fallbackResponse = await fetch(pagesUrl, {
-    headers: { "Cache-Control": "no-store" }
-  });
-
-  let fallbackHeaders = new Headers(fallbackResponse.headers);
-  let fallbackBody = fallbackResponse.body;
-  if (encoding && typeof CompressionStream !== "undefined") {
-    fallbackBody = fallbackBody.pipeThrough(new CompressionStream(encoding));
-    fallbackHeaders.set("Content-Encoding", encoding);
-  }
-
-  return new Response(fallbackBody, {
-    status: fallbackResponse.status,
-    statusText: fallbackResponse.statusText,
-    headers: fallbackHeaders
-  });
+  return fetch(pagesUrl, { headers: { "Cache-Control": "no-store" } });
 }
