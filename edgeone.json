@@ -1,10 +1,13 @@
 {
-  "headers": {
-    "/**": {
-      "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
-      "X-Frame-Options": "DENY",
-      "X-XSS-Protection": "1; mode=block",
-      "Referrer-Policy": "strict-origin-when-cross-origin"
+  "headers": [
+    {
+      "source": "/**",
+      "headers": [
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
     }
-  }
+  ]
 }
