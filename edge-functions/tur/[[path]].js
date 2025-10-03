@@ -24,20 +24,13 @@ async function fetchWithRetry(url, options = {}, attempt = 1) {
   }
 }
 
-export async function onRequest(context) {
+async function handleRequest(context) {
   const request = context.request;
   const url = new URL(request.url);
   const path = url.pathname;
 
-  if (!["GET", "HEAD"].includes(request.method)) {
-    return new Response("Method Not Allowed", { status: 405 });
-  }
-  if (path.length > 2048) {
-    return new Response("URI Too Long", { status: 414 });
-  }
-  if (path.includes("..")) {
-    return new Response("Bad Request", { status: 400 });
-  }
+  if (path.length > 2048) return new Response("URI Too Long", { status: 414 });
+  if (path.includes("..")) return new Response("Bad Request", { status: 400 });
 
   const geo = request.eo?.geo;
   const country = geo?.countryCodeAlpha2?.toLowerCase() ?? "unknown";
@@ -102,14 +95,9 @@ export async function onRequest(context) {
       for (const urlTry of upstreamUrls) {
         try {
           const response = await fetchWithRetry(urlTry);
-          if (response.ok && response.body) {
-            return response;
-          } else if (response.status === 429) {
-            lastError = new Error(`Upstream ${urlTry} returned 429, trying next`);
-            continue;
-          } else {
-            lastError = new Error(`Upstream ${urlTry} failed with status ${response.status}`);
-          }
+          if (response.ok && response.body) return response;
+          else if (response.status === 429) lastError = new Error(`Upstream ${urlTry} returned 429, trying next`);
+          else lastError = new Error(`Upstream ${urlTry} failed with status ${response.status}`);
         } catch (err) {
           lastError = err;
         }
@@ -135,3 +123,6 @@ export async function onRequest(context) {
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
   return fetchWithRetry(pagesUrl);
 }
+
+export { handleRequest as onRequestGet };
+export { handleRequest as onRequestHead };
