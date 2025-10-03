@@ -1,5 +1,5 @@
-async function handleRequest(context) {
-  const request = context.request;
+export async function onRequestGet(context) {
+  const { request } = context;
   const url = new URL(request.url);
   const path = url.pathname;
 
@@ -10,5 +10,6 @@ async function handleRequest(context) {
   if (path === "/tur/") return fetch("https://tur-mirror.pages.dev/");
 }
 
-export { handleRequest as onRequestGet };
-export { handleRequest as onRequestHead };
+export async function onRequestHead(context) {
+  return onRequestGet(context);
+}
