@@ -1,111 +1,137 @@
 const PREFIX = '/tur';
+const REQUEST_TIMEOUT = 30000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_BASE = 1000;
 
-async function fetchWithEdgeOneCache(url, request) {
-  const headers = new Headers();
-  headers.set("host", request.headers.get("host") || "");
-  const edgeoneRequest = new Request(url, { method: 'GET', headers });
-  return fetch(edgeoneRequest);
+async function fetchWithRetry(url, options = {}, attempt = 1) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    if (!response.ok && attempt < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, RETRY_DELAY_BASE * attempt));
+      return fetchWithRetry(url, options, attempt + 1);
+    }
+    return response;
+  } catch (err) {
+    clearTimeout(id);
+    if (attempt < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, RETRY_DELAY_BASE * attempt));
+      return fetchWithRetry(url, options, attempt + 1);
+    }
+    throw err;
+  }
 }
 
 export async function onRequest(context) {
   const request = context.request;
   const url = new URL(request.url);
   const path = url.pathname;
-  const pathArray = path.split("/");
+
+  if (!["GET", "HEAD"].includes(request.method)) {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+  if (path.length > 2048) {
+    return new Response("URI Too Long", { status: 414 });
+  }
+  if (path.includes("..")) {
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  const geo = request.eo?.geo;
+  const country = geo?.countryCodeAlpha2?.toLowerCase() ?? "unknown";
+  const inChina = country === "cn";
 
   if (path === PREFIX + "/") {
-    return fetchWithEdgeOneCache("https://tur-mirror.pages.dev/", request);
+    return fetchWithRetry("https://tur-mirror.pages.dev/");
   }
 
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
-    const upstreamPath = path.slice(PREFIX.length).replace(/^\/+/, '');
-    const upstreamUrl = "https://cdn.jsdelivr.net/gh/termux-user-repository/dists@master/" + upstreamPath;
-    const response = await fetch(upstreamUrl);
-    const newHeaders = new Headers(response.headers);
-    newHeaders.set("Cache-Control", "no-store");
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders
-    });
+    let upstreamPath = path.slice(PREFIX.length);
+    if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
+
+    const upstreamUrls = inChina
+      ? [
+          `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`,
+          `https://cdn.jsdmirror.cn/gh/termux-user-repository/dists@master/${upstreamPath}`,
+          `https://fastly.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`
+        ]
+      : [
+          `https://cdn.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
+          `https://fastly.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
+          `https://testingcf.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`
+        ];
+
+    try {
+      const response = await Promise.any(upstreamUrls.map(u => fetchWithRetry(u)));
+      return response;
+    } catch (err) {
+      return new Response("All dists upstreams failed: " + err, { status: 502 });
+    }
   }
 
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
-    const packageDebName = pathArray.at(-1);
-    const packageDebNameModified = encodeURIComponent(packageDebName.replace(/[^a-zA-Z0-9._-]/g, '.'));
-    const packageName = packageDebName.split("_")[0];
-    const xgetUrl = `https://xget.xi-xu.me/gh/termux-user-repository/dists/releases/download/${packageName}/${packageDebNameModified}`;
-    const githubUrl = `https://github.com/termux-user-repository/dists/releases/download/${packageName}/${packageDebNameModified}`;
-    const fallbackUrl = `https://github.com/termux-user-repository/dists/releases/download/0.1/${packageDebNameModified}`;
+    const fileName = path.split('/').pop();
+    const safeName = encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
+    const packageName = fileName.split("_")[0];
+    const primaryUrl = `https://github.com/termux-user-repository/dists/releases/download/${packageName}/${safeName}`;
+    const fallbackUrl = `https://github.com/termux-user-repository/dists/releases/download/0.1/${safeName}`;
 
+    let usePrimary = false;
     try {
-      const headResponse = await fetch(xgetUrl, { method: "HEAD" });
-      if (headResponse.ok) {
-        const xgetResp = await fetchWithEdgeOneCache(xgetUrl, request);
-        if (xgetResp.ok && xgetResp.body) {
-          const newHeaders = new Headers(xgetResp.headers);
-          if (xgetResp.headers.get("accept-ranges")) {
-            newHeaders.set("accept-ranges", xgetResp.headers.get("accept-ranges"));
-          }
-          newHeaders.set("Cache-Control", "public, max-age=86400");
-          return new Response(xgetResp.body, {
-            status: xgetResp.status,
-            statusText: xgetResp.statusText,
-            headers: newHeaders
-          });
-        } else {
-          const githubResp = await fetchWithEdgeOneCache(githubUrl, request);
-          if (githubResp.ok && githubResp.body) {
-            const newHeaders = new Headers(githubResp.headers);
-            if (githubResp.headers.get("accept-ranges")) {
-              newHeaders.set("accept-ranges", githubResp.headers.get("accept-ranges"));
-            }
-            newHeaders.set("Cache-Control", "public, max-age=86400");
-            return new Response(githubResp.body, {
-              status: githubResp.status,
-              statusText: githubResp.statusText,
-              headers: newHeaders
-            });
-          }
-        }
-      } else {
-        const githubHead = await fetch(githubUrl, { method: "HEAD" });
-        if (githubHead.ok) {
-          const githubResp = await fetchWithEdgeOneCache(githubUrl, request);
-          if (githubResp.ok && githubResp.body) {
-            const newHeaders = new Headers(githubResp.headers);
-            if (githubResp.headers.get("accept-ranges")) {
-              newHeaders.set("accept-ranges", githubResp.headers.get("accept-ranges"));
-            }
-            newHeaders.set("Cache-Control", "public, max-age=86400");
-            return new Response(githubResp.body, {
-              status: githubResp.status,
-              statusText: githubResp.statusText,
-              headers: newHeaders
-            });
-          }
-        }
-      }
+      const headResp = await fetchWithRetry(primaryUrl, { method: "HEAD" });
+      if (headResp.ok) usePrimary = true;
     } catch (e) {}
 
-    const fbResp = await fetchWithEdgeOneCache(fallbackUrl, request);
-    const newHeaders = new Headers(fbResp.headers);
-    newHeaders.set("Cache-Control", "public, max-age=86400");
-    return new Response(fbResp.body, {
-      status: fbResp.status,
-      statusText: fbResp.statusText,
-      headers: newHeaders
-    });
+    async function tryUpstreams(baseUrl) {
+      const upstreamUrls = inChina
+        ? [
+            `https://xget.xi-xu.me/gh/${baseUrl.replace("https://github.com/", "")}`,
+            `https://gh.dpik.top/${baseUrl}`,
+            `https://ghfile.geekertao.top/${baseUrl}`,
+            `https://gh.llkk.cc/${baseUrl}`,
+            `https://gitproxy.click/${baseUrl}`,
+            `https://ghfast.top/${baseUrl}`
+          ]
+        : [
+            `https://xget.xi-xu.me/gh/${baseUrl.replace("https://github.com/", "")}`,
+            baseUrl
+          ];
+      let lastError;
+      for (const urlTry of upstreamUrls) {
+        try {
+          const response = await fetchWithRetry(urlTry);
+          if (response.ok && response.body) {
+            return response;
+          } else if (response.status === 429) {
+            lastError = new Error(`Upstream ${urlTry} returned 429, trying next`);
+            continue;
+          } else {
+            lastError = new Error(`Upstream ${urlTry} failed with status ${response.status}`);
+          }
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw lastError;
+    }
+
+    try {
+      return await tryUpstreams(usePrimary ? primaryUrl : fallbackUrl);
+    } catch (err) {
+      if (usePrimary) {
+        try {
+          return await tryUpstreams(fallbackUrl);
+        } catch (err2) {
+          return new Response(`All pool upstreams failed: ${err2}`, { status: 502 });
+        }
+      }
+      return new Response(`All pool upstreams failed: ${err}`, { status: 502 });
+    }
   }
 
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
-  const fallbackResponse = await fetch(pagesUrl);
-  const fallbackHeaders = new Headers(fallbackResponse.headers);
-  fallbackHeaders.set("Cache-Control", "no-store");
-  return new Response(fallbackResponse.body, {
-    status: fallbackResponse.status,
-    statusText: fallbackResponse.statusText,
-    headers: fallbackHeaders
-  });
+  return fetchWithRetry(pagesUrl);
 }
