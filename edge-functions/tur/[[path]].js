@@ -1,13 +1,13 @@
 const PREFIX = '/tur';
 
-async function fetchWithEdgeOneCache(url: string, request: Request) {
+async function fetchWithEdgeOneCache(url, request) {
   const headers = new Headers();
   headers.set("host", request.headers.get("host") || "");
   const edgeoneRequest = new Request(url, { method: 'GET', headers });
   return fetch(edgeoneRequest);
 }
 
-export async function onRequest(context: any) {
+export async function onRequest(context) {
   const request = context.request;
   const url = new URL(request.url);
   const path = url.pathname;
@@ -31,7 +31,7 @@ export async function onRequest(context: any) {
   }
 
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
-    const packageDebName = pathArray.at(-1)!;
+    const packageDebName = pathArray.at(-1);
     const packageDebNameModified = encodeURIComponent(packageDebName.replace(/[^a-zA-Z0-9._-]/g, '.'));
     const packageName = packageDebName.split("_")[0];
     const xgetUrl = `https://xget.xi-xu.me/gh/termux-user-repository/dists/releases/download/${packageName}/${packageDebNameModified}`;
@@ -45,7 +45,7 @@ export async function onRequest(context: any) {
         if (xgetResp.ok && xgetResp.body) {
           const newHeaders = new Headers(xgetResp.headers);
           if (xgetResp.headers.get("accept-ranges")) {
-            newHeaders.set("accept-ranges", xgetResp.headers.get("accept-ranges")!);
+            newHeaders.set("accept-ranges", xgetResp.headers.get("accept-ranges"));
           }
           newHeaders.set("Cache-Control", "public, max-age=86400");
           return new Response(xgetResp.body, {
@@ -58,7 +58,7 @@ export async function onRequest(context: any) {
           if (githubResp.ok && githubResp.body) {
             const newHeaders = new Headers(githubResp.headers);
             if (githubResp.headers.get("accept-ranges")) {
-              newHeaders.set("accept-ranges", githubResp.headers.get("accept-ranges")!);
+              newHeaders.set("accept-ranges", githubResp.headers.get("accept-ranges"));
             }
             newHeaders.set("Cache-Control", "public, max-age=86400");
             return new Response(githubResp.body, {
@@ -75,7 +75,7 @@ export async function onRequest(context: any) {
           if (githubResp.ok && githubResp.body) {
             const newHeaders = new Headers(githubResp.headers);
             if (githubResp.headers.get("accept-ranges")) {
-              newHeaders.set("accept-ranges", githubResp.headers.get("accept-ranges")!);
+              newHeaders.set("accept-ranges", githubResp.headers.get("accept-ranges"));
             }
             newHeaders.set("Cache-Control", "public, max-age=86400");
             return new Response(githubResp.body, {
