@@ -1,26 +1,5 @@
 {
   "headers": {
-    "/tur/pool/**": {
-      "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
-      "X-Frame-Options": "DENY",
-      "X-XSS-Protection": "1; mode=block",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
-      "Cache-Control": "public, max-age=0, no-cache, s-maxage=86400, stale-while-revalidate=60"
-    },
-    "/tur/dists/**": {
-      "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
-      "X-Frame-Options": "DENY",
-      "X-XSS-Protection": "1; mode=block",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
-      "Cache-Control": "no-store"
-    },
-    "/tur/**": {
-      "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
-      "X-Frame-Options": "DENY",
-      "X-XSS-Protection": "1; mode=block",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
-      "Cache-Control": "no-store"
-    },
     "/**": {
       "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
       "X-Frame-Options": "DENY",
