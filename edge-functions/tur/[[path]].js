@@ -24,6 +24,21 @@ async function fetchWithRetry(url, options = {}, attempt = 1) {
   }
 }
 
+async function tryUrlsSequential(urls) {
+  let lastError;
+  for (const url of urls) {
+    try {
+      const resp = await fetchWithRetry(url);
+      if (resp.ok && resp.body) return resp;
+      else if (resp.status === 429) lastError = new Error(`Upstream ${url} returned 429`);
+      else lastError = new Error(`Upstream ${url} failed with status ${resp.status}`);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
 export async function onRequestGet(context) {
   const { request } = context;
   const url = new URL(request.url);
@@ -41,7 +56,6 @@ export async function onRequestGet(context) {
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
     let upstreamPath = path.slice(PREFIX.length);
     if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
-
     const upstreamUrls = inChina
       ? [
           `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`,
@@ -53,9 +67,8 @@ export async function onRequestGet(context) {
           `https://fastly.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
           `https://testingcf.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`
         ];
-
     try {
-      return await Promise.any(upstreamUrls.map(u => fetchWithRetry(u)));
+      return await tryUrlsSequential(upstreamUrls);
     } catch (err) {
       return new Response("All dists upstreams failed: " + err, { status: 502 });
     }
@@ -70,27 +83,37 @@ export async function onRequestGet(context) {
 
     let usePrimary = false;
     try {
-      const headResp = await fetch(primaryUrl, { method: "HEAD" });
+      const headResp = await fetchWithRetry(primaryUrl, { method: "HEAD" });
       if (headResp.ok) usePrimary = true;
     } catch (e) {}
 
     const upstreamUrls = inChina
       ? [
-          `https://xget.xi-xu.me/gh/${primaryUrl.replace("https://github.com/", "")}`,
-          `https://gh.dpik.top/${primaryUrl}`,
-          `https://ghfile.geekertao.top/${primaryUrl}`,
-          `https://gh.llkk.cc/${primaryUrl}`,
-          `https://gitproxy.click/${primaryUrl}`,
-          `https://ghfast.top/${primaryUrl}`
+          `https://xget.xi-xu.me/gh/${(usePrimary ? primaryUrl : fallbackUrl).replace("https://github.com/", "")}`,
+          `https://gh.dpik.top/${usePrimary ? primaryUrl : fallbackUrl}`,
+          `https://ghfile.geekertao.top/${usePrimary ? primaryUrl : fallbackUrl}`,
+          `https://gh.llkk.cc/${usePrimary ? primaryUrl : fallbackUrl}`,
+          `https://gitproxy.click/${usePrimary ? primaryUrl : fallbackUrl}`,
+          `https://ghfast.top/${usePrimary ? primaryUrl : fallbackUrl}`
         ]
-      : [primaryUrl];
+      : [usePrimary ? primaryUrl : fallbackUrl];
 
     try {
-      return await Promise.any(upstreamUrls.map(u => fetchWithRetry(u)));
+      return await tryUrlsSequential(upstreamUrls);
     } catch (err) {
       if (usePrimary) {
+        const fallbackUrls = inChina
+          ? [
+              `https://xget.xi-xu.me/gh/${fallbackUrl.replace("https://github.com/", "")}`,
+              `https://gh.dpik.top/${fallbackUrl}`,
+              `https://ghfile.geekertao.top/${fallbackUrl}`,
+              `https://gh.llkk.cc/${fallbackUrl}`,
+              `https://gitproxy.click/${fallbackUrl}`,
+              `https://ghfast.top/${fallbackUrl}`
+            ]
+          : [fallbackUrl];
         try {
-          return await fetch(fallbackUrl);
+          return await tryUrlsSequential(fallbackUrls);
         } catch (err2) {
           return new Response("All pool upstreams failed: " + err2, { status: 502 });
         }
