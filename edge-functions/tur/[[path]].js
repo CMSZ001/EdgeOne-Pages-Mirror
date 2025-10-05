@@ -1,21 +1,23 @@
 const PREFIX = '/tur';
-const REQUEST_TIMEOUT = 30000;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_BASE = 1000;
 
 async function fetchWithRetry(url, options = {}, attempt = 1) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(id);
+    const response = await fetch(url, { 
+      ...options, 
+      eo: {
+        connectTimeout: 300,
+        readTimeout: 300,
+        writeTimeout: 300
+      }
+    });
     if (!response.ok && attempt < MAX_RETRIES) {
       await new Promise(r => setTimeout(r, RETRY_DELAY_BASE * attempt));
       return fetchWithRetry(url, options, attempt + 1);
     }
     return response;
   } catch (err) {
-    clearTimeout(id);
     if (attempt < MAX_RETRIES) {
       await new Promise(r => setTimeout(r, RETRY_DELAY_BASE * attempt));
       return fetchWithRetry(url, options, attempt + 1);
@@ -24,14 +26,21 @@ async function fetchWithRetry(url, options = {}, attempt = 1) {
   }
 }
 
-async function tryUrlsSequential(urls) {
+async function tryUrlsSequential(urls, options = {}) {
   let lastError;
   for (const url of urls) {
     try {
-      const resp = await fetchWithRetry(url);
-      if (resp.ok && resp.body) return resp;
-      else if (resp.status === 429) lastError = new Error(`Upstream ${url} returned 429`);
-      else lastError = new Error(`Upstream ${url} failed with status ${resp.status}`);
+      const resp = await fetchWithRetry(url, options);
+      if (resp.ok && resp.body) {
+        return new Response(resp.body, {
+          status: resp.status,
+          headers: resp.headers
+        });
+      } else if (resp.status === 429) {
+        lastError = new Error(`Upstream ${url} returned 429`);
+      } else {
+        lastError = new Error(`Upstream ${url} failed with status ${resp.status}`);
+      }
     } catch (err) {
       lastError = err;
     }
@@ -51,7 +60,10 @@ export async function onRequestGet(context) {
   const country = geo?.countryCodeAlpha2?.toLowerCase() ?? "unknown";
   const inChina = country === "cn";
 
-  if (path === PREFIX + "/") return fetch("https://tur-mirror.pages.dev/");
+  if (path === PREFIX + "/") {
+    const resp = await fetchWithRetry("https://tur-mirror.pages.dev/");
+    return new Response(resp.body, { status: resp.status, headers: resp.headers });
+  }
 
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
     let upstreamPath = path.slice(PREFIX.length);
@@ -68,7 +80,7 @@ export async function onRequestGet(context) {
           `https://testingcf.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`
         ];
     try {
-      return await tryUrlsSequential(upstreamUrls);
+      return await tryUrlsSequential(upstreamUrls, { headers: request.headers });
     } catch (err) {
       return new Response("All dists upstreams failed: " + err, { status: 502 });
     }
@@ -99,7 +111,7 @@ export async function onRequestGet(context) {
       : [usePrimary ? primaryUrl : fallbackUrl];
 
     try {
-      return await tryUrlsSequential(upstreamUrls);
+      return await tryUrlsSequential(upstreamUrls, { headers: request.headers });
     } catch (err) {
       if (usePrimary) {
         const fallbackUrls = inChina
@@ -113,7 +125,7 @@ export async function onRequestGet(context) {
             ]
           : [fallbackUrl];
         try {
-          return await tryUrlsSequential(fallbackUrls);
+          return await tryUrlsSequential(fallbackUrls, { headers: request.headers });
         } catch (err2) {
           return new Response("All pool upstreams failed: " + err2, { status: 502 });
         }
@@ -124,7 +136,8 @@ export async function onRequestGet(context) {
 
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
-  return fetchWithRetry(pagesUrl);
+  const resp = await fetchWithRetry(pagesUrl, { headers: request.headers });
+  return new Response(resp.body, { status: resp.status, headers: resp.headers });
 }
 
 export async function onRequestHead(context) {
