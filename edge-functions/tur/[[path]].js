@@ -4,12 +4,13 @@ const RETRY_DELAY_BASE = 1000;
 
 async function fetchWithRetry(url, options = {}, attempt = 1) {
   try {
-    const response = await fetch(url, { 
-      ...options, 
+    const response = await fetch(url, {
+      ...options,
       eo: {
-        connectTimeout: 300,
-        readTimeout: 300,
-        writeTimeout: 300
+        timeoutSetting: 300,   // 总超时（秒）
+        readTimeout: 300,      // 读超时
+        writeTimeout: 300,     // 写超时
+        connectTimeout: 300    // 连接超时
       }
     });
     if (!response.ok && attempt < MAX_RETRIES) {
@@ -26,21 +27,14 @@ async function fetchWithRetry(url, options = {}, attempt = 1) {
   }
 }
 
-async function tryUrlsSequential(urls, options = {}) {
+async function tryUrlsSequential(urls) {
   let lastError;
   for (const url of urls) {
     try {
-      const resp = await fetchWithRetry(url, options);
-      if (resp.ok && resp.body) {
-        return new Response(resp.body, {
-          status: resp.status,
-          headers: resp.headers
-        });
-      } else if (resp.status === 429) {
-        lastError = new Error(`Upstream ${url} returned 429`);
-      } else {
-        lastError = new Error(`Upstream ${url} failed with status ${resp.status}`);
-      }
+      const resp = await fetchWithRetry(url);
+      if (resp.ok && resp.body) return resp;
+      else if (resp.status === 429) lastError = new Error(`Upstream ${url} returned 429`);
+      else lastError = new Error(`Upstream ${url} failed with status ${resp.status}`);
     } catch (err) {
       lastError = err;
     }
@@ -60,11 +54,10 @@ export async function onRequestGet(context) {
   const country = geo?.countryCodeAlpha2?.toLowerCase() ?? "unknown";
   const inChina = country === "cn";
 
-  if (path === PREFIX + "/") {
-    const resp = await fetchWithRetry("https://tur-mirror.pages.dev/");
-    return new Response(resp.body, { status: resp.status, headers: resp.headers });
-  }
+  // 首页
+  if (path === PREFIX + "/") return fetch("https://tur-mirror.pages.dev/");
 
+  // dists 下的具体文件
   if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
     let upstreamPath = path.slice(PREFIX.length);
     if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
@@ -80,12 +73,13 @@ export async function onRequestGet(context) {
           `https://testingcf.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`
         ];
     try {
-      return await tryUrlsSequential(upstreamUrls, { headers: request.headers });
+      return await tryUrlsSequential(upstreamUrls);
     } catch (err) {
       return new Response("All dists upstreams failed: " + err, { status: 502 });
     }
   }
 
+  // pool 下的具体文件
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
     const fileName = path.split('/').pop();
     const safeName = encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
@@ -111,7 +105,7 @@ export async function onRequestGet(context) {
       : [usePrimary ? primaryUrl : fallbackUrl];
 
     try {
-      return await tryUrlsSequential(upstreamUrls, { headers: request.headers });
+      return await tryUrlsSequential(upstreamUrls);
     } catch (err) {
       if (usePrimary) {
         const fallbackUrls = inChina
@@ -125,7 +119,7 @@ export async function onRequestGet(context) {
             ]
           : [fallbackUrl];
         try {
-          return await tryUrlsSequential(fallbackUrls, { headers: request.headers });
+          return await tryUrlsSequential(fallbackUrls);
         } catch (err2) {
           return new Response("All pool upstreams failed: " + err2, { status: 502 });
         }
@@ -134,10 +128,10 @@ export async function onRequestGet(context) {
     }
   }
 
+  // 其它情况 → fallback 代理到 pages
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
-  const resp = await fetchWithRetry(pagesUrl, { headers: request.headers });
-  return new Response(resp.body, { status: resp.status, headers: resp.headers });
+  return fetchWithRetry(pagesUrl);
 }
 
 export async function onRequestHead(context) {
