@@ -6,11 +6,13 @@ async function fetchWithRetry(url, options = {}, attempt = 1) {
   try {
     const response = await fetch(url, {
       ...options,
+      version: "HTTP/2.0",
       eo: {
-        timeoutSetting: 300,   // 总超时（秒）
-        readTimeout: 300,      // 读超时
-        writeTimeout: 300,     // 写超时
-        connectTimeout: 300    // 连接超时
+        timeoutSetting: {
+            connectTimeout: 300000,
+            readTimeout: 300000,
+            writeTimeout: 300000,
+        }
       }
     });
     if (!response.ok && attempt < MAX_RETRIES) {
