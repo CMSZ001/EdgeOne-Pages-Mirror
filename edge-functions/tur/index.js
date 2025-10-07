@@ -17,10 +17,11 @@ export async function onRequestGet(context) {
           writeTimeout: 300000
         }
       }
-    })
-  };
+    });
+  }
+}
 
 export async function onRequestHead(context) {
-  return onRequestGet(context);
+  const res = await onRequestGet(context);
+  return new Response(null, { status: res.status, headers: res.headers });
 }
- 
