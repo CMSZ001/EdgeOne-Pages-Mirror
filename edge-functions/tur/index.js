@@ -17,9 +17,10 @@ export async function onRequestGet(context) {
           writeTimeout: 300000
         }
       }
-    });
-  }
+    })
+  };
 
 export async function onRequestHead(context) {
   return onRequestGet(context);
 }
+ 
