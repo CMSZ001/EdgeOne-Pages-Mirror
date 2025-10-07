@@ -9,9 +9,9 @@ async function fetchWithRetry(url, options = {}, attempt = 1) {
       version: "HTTP/2.0",
       eo: {
         timeoutSetting: {
-            connectTimeout: 300000,
-            readTimeout: 300000,
-            writeTimeout: 300000,
+          connectTimeout: 300000,
+          readTimeout: 300000,
+          writeTimeout: 300000,
         }
       }
     });
@@ -52,36 +52,8 @@ export async function onRequestGet(context) {
   if (path.length > 2048) return new Response("URI Too Long", { status: 414 });
   if (path.includes("..")) return new Response("Bad Request", { status: 400 });
 
-  const geo = request.eo?.geo;
-  const country = geo?.countryCodeAlpha2?.toLowerCase() ?? "unknown";
-  const inChina = country === "cn";
-
-  // 首页
   if (path === PREFIX + "/") return fetch("https://tur-mirror.pages.dev/");
 
-  // dists 下的具体文件
-  if (path.startsWith(PREFIX + '/dists/') && !path.endsWith('/')) {
-    let upstreamPath = path.slice(PREFIX.length);
-    if (upstreamPath.startsWith('/')) upstreamPath = upstreamPath.slice(1);
-    const upstreamUrls = inChina
-      ? [
-          `https://cdn.jsdmirror.com/gh/termux-user-repository/dists@master/${upstreamPath}`,
-          `https://cdn.jsdmirror.cn/gh/termux-user-repository/dists@master/${upstreamPath}`,
-          `https://fastly.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`
-        ]
-      : [
-          `https://cdn.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
-          `https://fastly.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`,
-          `https://testingcf.jsdelivr.net/gh/termux-user-repository/dists@master/${upstreamPath}`
-        ];
-    try {
-      return await tryUrlsSequential(upstreamUrls);
-    } catch (err) {
-      return new Response("All dists upstreams failed: " + err, { status: 502 });
-    }
-  }
-
-  // pool 下的具体文件
   if (path.startsWith(PREFIX + '/pool/') && !path.endsWith('/')) {
     const fileName = path.split('/').pop();
     const safeName = encodeURIComponent(fileName.replace(/[^a-zA-Z0-9._-]/g, '.'));
@@ -95,31 +67,20 @@ export async function onRequestGet(context) {
       if (headResp.ok) usePrimary = true;
     } catch (e) {}
 
-    const upstreamUrls = inChina
-      ? [
-          `https://xget.xi-xu.me/gh/${(usePrimary ? primaryUrl : fallbackUrl).replace("https://github.com/", "")}`,
-          `https://gh.dpik.top/${usePrimary ? primaryUrl : fallbackUrl}`,
-          `https://ghfile.geekertao.top/${usePrimary ? primaryUrl : fallbackUrl}`,
-          `https://gh.llkk.cc/${usePrimary ? primaryUrl : fallbackUrl}`,
-          `https://gitproxy.click/${usePrimary ? primaryUrl : fallbackUrl}`,
-          `https://ghfast.top/${usePrimary ? primaryUrl : fallbackUrl}`
-        ]
-      : [usePrimary ? primaryUrl : fallbackUrl];
+    const mainUrl = usePrimary ? primaryUrl : fallbackUrl;
+    const upstreamUrls = [
+      `https://xget.xi-xu.me/gh/${mainUrl.replace("https://github.com/", "")}`,
+      mainUrl
+    ];
 
     try {
       return await tryUrlsSequential(upstreamUrls);
     } catch (err) {
       if (usePrimary) {
-        const fallbackUrls = inChina
-          ? [
-              `https://xget.xi-xu.me/gh/${fallbackUrl.replace("https://github.com/", "")}`,
-              `https://gh.dpik.top/${fallbackUrl}`,
-              `https://ghfile.geekertao.top/${fallbackUrl}`,
-              `https://gh.llkk.cc/${fallbackUrl}`,
-              `https://gitproxy.click/${fallbackUrl}`,
-              `https://ghfast.top/${fallbackUrl}`
-            ]
-          : [fallbackUrl];
+        const fallbackUrls = [
+          `https://xget.xi-xu.me/gh/${fallbackUrl.replace("https://github.com/", "")}`,
+          fallbackUrl
+        ];
         try {
           return await tryUrlsSequential(fallbackUrls);
         } catch (err2) {
@@ -130,7 +91,6 @@ export async function onRequestGet(context) {
     }
   }
 
-  // 其它情况 → fallback 代理到 pages
   const upstreamPath = path.startsWith(PREFIX) ? path.slice(PREFIX.length) : path;
   const pagesUrl = `https://tur-mirror.pages.dev${upstreamPath}`;
   return fetchWithRetry(pagesUrl);
