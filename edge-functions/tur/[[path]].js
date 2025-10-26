@@ -69,7 +69,7 @@ export async function onRequestGet(context) {
 
     const mainUrl = usePrimary ? primaryUrl : fallbackUrl;
     const upstreamUrls = [
-      `https://xget.xi-xu.me/gh/${mainUrl.replace("https://github.com/", "")}`,
+      `https://xget.835927.xyz/gh/${mainUrl.replace("https://github.com/", "")}`,
       mainUrl
     ];
 
@@ -78,7 +78,7 @@ export async function onRequestGet(context) {
     } catch (err) {
       if (usePrimary) {
         const fallbackUrls = [
-          `https://xget.xi-xu.me/gh/${fallbackUrl.replace("https://github.com/", "")}`,
+          `https://xget.835927.xyz/gh/${fallbackUrl.replace("https://github.com/", "")}`,
           fallbackUrl
         ];
         try {
